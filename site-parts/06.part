@@ -1,0 +1,144 @@
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 15.5a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 8a3.8 3.8 0 0 1-.4 7.5H7Z"/><path d="m9 18-1 2m5-2-1 2m5-2-1 2" stroke-linecap="round"/></svg>
+              </div>
+            </article>
+            <article class="hero">
+              <div class="label">Temperature now-ish</div>
+              <div class="value" id="nextTemp">—</div>
+              <div class="meta" id="tempMeta">Median of the ensemble</div>
+              <div class="mini-icon" aria-hidden="true">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 14.8V5a3 3 0 0 0-6 0v9.8a5 5 0 1 0 6 0Z"/><path d="M11 11v6" stroke-linecap="round"/></svg>
+              </div>
+            </article>
+            <article class="hero">
+              <div class="label">Expected rain</div>
+              <div class="value" id="totalRain">—</div>
+              <div class="meta" id="totalRainMeta">Ensemble mean over horizon</div>
+              <div class="mini-icon" aria-hidden="true">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3s5 6 5 10a5 5 0 1 1-10 0c0-4 5-10 5-10Z"/></svg>
+              </div>
+            </article>
+            <article class="hero">
+              <div class="label">Temperature range</div>
+              <div class="value" id="tempRange">—</div>
+              <div class="meta" id="rangeMeta">Median forecast range</div>
+              <div class="mini-icon" aria-hidden="true">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M8 8l-4 4 4 4M16 8l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+            </article>
+          </div>
+
+          <div class="chart-card">
+            <div class="chart-head">
+              <h3>Temperature & rain timeline</h3>
+              <div class="legend"><span><i class="dot temp"></i>Temperature</span><span><i class="band"></i>10–90% range</span><span><i class="dot rain"></i>Rain chance</span></div>
+            </div>
+            <div class="chart-wrap" id="chartWrap">
+              <canvas id="forecastChart" aria-label="Temperature and rain forecast chart"></canvas>
+              <div id="chartTooltip" class="tooltip"></div>
+            </div>
+            <div class="chart-foot"><span>Blue bars: rain chance scaled to the full chart height · expected mm stays in the tooltip</span><span><b id="timezoneText">Local time</b></span></div>
+          </div>
+
+          <div class="section-title"><h3>Day by day</h3><p>Peak hourly rain chance · mean rain amount</p></div>
+          <div id="daysGrid" class="days"></div>
+
+          <div class="section-title"><h3>Hourly detail</h3><p>Scroll for the full selected horizon</p></div>
+          <div class="timeline-card">
+            <div class="timeline-head"><div>Time</div><div>Temp</div><div>Rain chance</div><div>Rain</div></div>
+            <div id="timelineBody" class="timeline-body"></div>
+          </div>
+
+          <footer>
+            <span>Rain chance = share of WeatherNext 2 ensemble members with ≥ 0.1 mm in that hour. It is a model-derived signal, not an observed probability.</span>
+            <span>Forecast: Open-Meteo / Google WeatherNext 2 · Map: OpenStreetMap contributors</span>
+          </footer>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.18.1/dist/axios.min.js"></script>
+  <script>
+  (() => {
+    'use strict';
+
+    const INDIA = { minLat: 6.2, maxLat: 37.7, minLon: 68.0, maxLon: 97.6 };
+    const DEFAULT_PIN = { lat: 17.45, lon: 78.30 };
+    const TILE_SIZE = 256;
+    const MIN_ZOOM = 4;
+    const MAX_ZOOM = 18;
+    const map = document.getElementById('map');
+    const tiles = document.getElementById('tiles');
+    const marker = document.getElementById('marker');
+    const tileFallback = document.getElementById('tileFallback');
+    const latInput = document.getElementById('latInput');
+    const lonInput = document.getElementById('lonInput');
+    const horizonN = document.getElementById('horizonN');
+    const hoursBtn = document.getElementById('hoursBtn');
+    const daysBtn = document.getElementById('daysBtn');
+    const horizonLabel = document.getElementById('horizonLabel');
+    const forecastBtn = document.getElementById('forecastBtn');
+    const locationError = document.getElementById('locationError');
+    const emptyState = document.getElementById('emptyState');
+    const forecastContent = document.getElementById('forecastContent');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const toast = document.getElementById('toast');
+    const placeSearch = document.getElementById('placeSearch');
+    const clearSearch = document.getElementById('clearSearch');
+    const searchResults = document.getElementById('searchResults');
+    const locateMe = document.getElementById('locateMe');
+    const locateMap = document.getElementById('locateMap');
+    const mapZoomReadout = document.getElementById('mapZoomReadout');
+    const canvas = document.getElementById('forecastChart');
+    const chartWrap = document.getElementById('chartWrap');
+    const chartTooltip = document.getElementById('chartTooltip');
+    const weatherMood = document.getElementById('weatherMood');
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+
+    let pin = loadJSON('rainscope-pin', DEFAULT_PIN);
+    if (!insideIndia(pin.lat, pin.lon)) pin = { ...DEFAULT_PIN };
+    let mapCenter = { lat: pin.lat, lon: pin.lon };
+    let zoom = Number(storageGet('rainscope-zoom')) || 5;
+    zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+    let unit = storageGet('rainscope-unit') === 'days' ? 'days' : 'hours';
+    let latestPoints = [];
+    let latestChartLayout = null;
+    let selectedPlaceName = storageGet('rainscope-place') || '';
+    let searchTimer = null;
+    let searchAbort = null;
+    let tileErrors = 0;
+    let tileLoads = 0;
+
+    const savedN = Number(storageGet('rainscope-n'));
+    if (Number.isFinite(savedN) && savedN > 0) horizonN.value = savedN;
+
+    function storageGet(key){ try { return window.localStorage.getItem(key); } catch { return null; } }
+    function storageSet(key,value){ try { window.localStorage.setItem(key,value); } catch {} }
+    function loadJSON(key, fallback){
+      try { return JSON.parse(storageGet(key)) || fallback; } catch { return fallback; }
+    }
+    function saveState(){
+      storageSet('rainscope-pin', JSON.stringify(pin));
+      storageSet('rainscope-zoom', String(zoom));
+      storageSet('rainscope-unit', unit);
+      storageSet('rainscope-n', String(Number(horizonN.value) || 1));
+      if (selectedPlaceName) storageSet('rainscope-place', selectedPlaceName);
+    }
+    function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+    function insideIndia(lat, lon){ return lat >= INDIA.minLat && lat <= INDIA.maxLat && lon >= INDIA.minLon && lon <= INDIA.maxLon; }
+    function num(v, digits=1){ return Number(v).toFixed(digits); }
+    function showToast(message){
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(showToast.t);
+      showToast.t = setTimeout(() => toast.classList.remove('show'), 2400);
+    }
+    function showError(message){ locationError.textContent = message; locationError.classList.add('visible'); }
+    function clearError(){ locationError.classList.remove('visible'); locationError.textContent=''; }
+
+    // ---------- Minimal slippy map (no external JS library) ----------
+    function project(lat, lon, z){
+      const scale = TILE_SIZE * Math.pow(2, z);
+      const x = (lon + 180) / 360 * scale;
+      const s = Math.sin(lat * Math.PI / 180);

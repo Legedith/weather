@@ -1,0 +1,134 @@
+        },()=>{}, {enableHighAccuracy:true,timeout:20000,maximumAge:0});
+      },err=>{
+        setLocatingState(false);
+        showError(geolocationMessage(err));
+        showToast('GPS could not be used — see the message below the map.');
+      },{enableHighAccuracy:false,timeout:20000,maximumAge:300000});
+    }
+    locateMe.onclick=e=>{e.stopPropagation();locateCurrentPosition();};
+    locateMap.onclick=e=>{e.stopPropagation();locateCurrentPosition();};
+    function escapeHTML(s=''){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+
+    // ---------- Horizon ----------
+    function setUnit(next){
+      unit=next;
+      hoursBtn.classList.toggle('active',unit==='hours');
+      daysBtn.classList.toggle('active',unit==='days');
+      horizonN.max=unit==='hours'?24:15;
+      const current=Number(horizonN.value)||1;
+      if(unit==='hours' && current>24) horizonN.value=24;
+      if(unit==='days' && current>15) horizonN.value=7;
+      sanitizeHorizon();
+      saveState();
+    }
+    hoursBtn.onclick=()=>setUnit('hours'); daysBtn.onclick=()=>setUnit('days');
+    horizonN.addEventListener('input',updateHorizon);
+    horizonN.addEventListener('change',()=>{
+      const raw=Number(horizonN.value);
+      if(unit==='hours' && raw>24) showToast('Hourly forecasts stop at 24 hours. Select Days for a longer forecast.');
+      sanitizeHorizon();saveState();
+    });
+    function sanitizeHorizon(){const max=unit==='hours'?24:15;let n=Math.round(Number(horizonN.value)||1);n=clamp(n,1,max);horizonN.value=n;updateHorizon();return n;}
+    function updateHorizon(){
+      const max=unit==='hours'?24:15;
+      const raw=Math.max(1,Number(horizonN.value)||1);
+      const n=Math.min(raw,max);
+      horizonLabel.textContent=unit==='hours'?`Next ${n} hour${n===1?'':'s'}`:`Next ${n} day${n===1?'':'s'} · ${n*24}h`;
+    }
+
+    // ---------- Forecast ----------
+    forecastBtn.onclick=runForecast;
+    async function runForecast(){
+      clearError();
+      const lat=Number(latInput.value),lon=Number(lonInput.value);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)||!insideIndia(lat,lon)){showError('Choose a valid point inside India first.');return;}
+      pin={lat,lon};
+      const n=sanitizeHorizon();
+      const hours=unit==='hours'?n:n*24;
+      setLoading(true);
+      saveState();
+      try{
+        const url=new URL('https://ensemble-api.open-meteo.com/v1/ensemble');
+        url.searchParams.set('latitude',pin.lat.toFixed(5));
+        url.searchParams.set('longitude',pin.lon.toFixed(5));
+        url.searchParams.set('hourly','temperature_2m,rain,cloud_cover,is_day');
+        url.searchParams.set('timezone','auto');
+        url.searchParams.set('forecast_hours',String(hours));
+        url.searchParams.set('models','google_weathernext2_ensemble');
+        url.searchParams.set('temperature_unit','celsius');
+        url.searchParams.set('precipitation_unit','mm');
+        let data;
+        try{
+          const response=await axios.get(url.toString(),{headers:{'Accept':'application/json'}});
+          data=response.data;
+        }catch(requestError){
+          const detail=requestError?.response?.data?.reason || requestError?.response?.data?.error || '';
+          const status=requestError?.response?.status;
+          throw new Error(detail || (status ? `Forecast service returned ${status}.` : 'Forecast service could not be reached.'));
+        }
+        const parsed=parseForecast(data,hours);
+        if(!parsed.points.length) throw new Error('The forecast returned no usable temperature or rain values.');
+        latestPoints=parsed.points;
+        renderForecast(parsed,data,n,hours);
+        emptyState.style.display='none';forecastContent.classList.add('visible');
+      }catch(err){
+        console.error(err);
+        showError(`Could not load the forecast. ${err.message || 'Check your internet connection and try again.'}`);
+      }finally{setLoading(false);}
+    }
+    function setLoading(on){forecastBtn.disabled=on;forecastBtn.classList.toggle('loading',on);forecastBtn.querySelector('.btn-text').textContent=on?'Loading forecast…':'Show forecast';loadingOverlay.classList.toggle('visible',on && forecastContent.classList.contains('visible'));}
+
+    function parseForecast(data, requestedHours){
+      const hourly=data.hourly||{};
+      const times=Array.isArray(hourly.time)?hourly.time.slice(0,requestedHours):[];
+      const tempKeys=Object.keys(hourly).filter(k=>k==='temperature_2m' || k.startsWith('temperature_2m_member'));
+      const rainKeys=Object.keys(hourly).filter(k=>k==='rain' || k.startsWith('rain_member'));
+      const cloudKeys=Object.keys(hourly).filter(k=>k==='cloud_cover' || k.startsWith('cloud_cover_member'));
+      const tempSeries=tempKeys.map(k=>hourly[k]).filter(Array.isArray);
+      const rainSeries=rainKeys.map(k=>hourly[k]).filter(Array.isArray);
+      const cloudSeries=cloudKeys.map(k=>hourly[k]).filter(Array.isArray);
+      const isDaySeries=Array.isArray(hourly.is_day)?hourly.is_day:[];
+      if(!tempSeries.length) throw new Error('Temperature ensemble fields were not found in the API response.');
+      const points=times.map((time,i)=>{
+        const tv=tempSeries.map(a=>Number(a[i])).filter(Number.isFinite);
+        const rv=rainSeries.map(a=>Number(a[i])).filter(Number.isFinite).map(v=>Math.max(0,v));
+        const cv=cloudSeries.map(a=>Number(a[i])).filter(Number.isFinite).map(v=>clamp(v,0,100));
+        if(!tv.length) return null;
+        tv.sort((a,b)=>a-b);rv.sort((a,b)=>a-b);
+        const rainMean=rv.length?mean(rv):0;
+        const rainProb=rv.length?100*rv.filter(v=>v>=0.1).length/rv.length:0;
+        const parsedClock=parseTimeString(time);
+        const fallbackIsDay=parsedClock.hh>=6 && parsedClock.hh<18;
+        return {
+          time,
+          temp:quantile(tv,.5), temp10:quantile(tv,.1), temp90:quantile(tv,.9),
+          rain:rainMean, rainMedian:rv.length?quantile(rv,.5):0, rainProb,
+          cloud:cv.length?mean(cv):(rainProb>=35?72:30),
+          isDay:isDaySeries[i]!==undefined?Number(isDaySeries[i])>=0.5:fallbackIsDay,
+          membersTemp:tv.length, membersRain:rv.length
+        };
+      }).filter(Boolean);
+      return {points,tempMembers:tempSeries.length,rainMembers:rainSeries.length};
+    }
+    function mean(a){return a.reduce((s,v)=>s+v,0)/(a.length||1)}
+    function quantile(sorted,q){if(!sorted.length)return NaN;const pos=(sorted.length-1)*q;const base=Math.floor(pos),rest=pos-base;return sorted[base+1]!==undefined?sorted[base]+rest*(sorted[base+1]-sorted[base]):sorted[base];}
+
+    function renderForecast(parsed,data,n,hours){
+      const points=parsed.points;
+      const displayName=selectedPlaceName || 'Selected location';
+      document.getElementById('forecastTitle').textContent=displayName;
+      document.getElementById('forecastSub').textContent=`${Math.abs(pin.lat).toFixed(4)}°${pin.lat>=0?'N':'S'}, ${Math.abs(pin.lon).toFixed(4)}°${pin.lon>=0?'E':'W'} · ${unit==='hours'?`Next ${n} hour${n===1?'':'s'}`:`Next ${n} day${n===1?'':'s'} (${hours}h)`}`;
+      document.getElementById('updatedAt').textContent=`Fetched ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+      document.getElementById('timezoneText').textContent=data.timezone_abbreviation?`${data.timezone_abbreviation} local time`:'Local time';
+
+      const first=points[0];
+      const totalRain=points.reduce((s,p)=>s+p.rain,0);
+      const peak=points.reduce((a,b)=>b.rainProb>a.rainProb?b:a,points[0]);
+      const medTemps=points.map(p=>p.temp);
+      const low=Math.min(...medTemps),high=Math.max(...medTemps);
+      const wet=points.filter(p=>p.rainProb>=50 || p.rain>=.25);
+      applyWeatherTheme(points);
+      let outlook,meta;
+      if(totalRain<0.5 && peak.rainProb<30){
+        outlook='Mostly dry';meta=`Peak rain signal ${Math.round(peak.rainProb)}% · ${totalRain.toFixed(1)} mm expected`;
+      }else if(totalRain>=25 || peak.rainProb>=80){

@@ -1,0 +1,138 @@
+      .locate-btn.locating:after{content:"..."}
+      .search-results{max-height:330px}
+    }
+    @media(max-width:430px){
+      .forecast-panel:before{margin:-12px -12px 14px}
+      .hero{padding-right:64px}
+      .chart-head{align-items:flex-start}
+      .legend{flex-wrap:wrap;justify-content:flex-end}
+    }
+
+  </style>
+</head>
+<body data-weather-theme="sunny">
+  <div id="weatherFx" class="weather-fx" aria-hidden="true"></div>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M8 20.4c-2.7 0-4.8-2-4.8-4.6 0-2.5 1.9-4.4 4.3-4.6C8.4 7.7 11.6 5 15.5 5c4.4 0 8 3.4 8.3 7.7 2.7.3 4.8 2.5 4.8 5.3 0 2.9-2.4 5.3-5.4 5.3H8.8" fill="white" opacity=".94"/>
+            <path d="M12.2 21.1l-2.1 4.1M18 21.1l-2.1 4.1M23.5 21.1l-2.1 4.1" stroke="#DDF2FF" stroke-width="2.1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <h1>RainScope India</h1>
+          <p>Future rain & temperature, powered by Google WeatherNext 2 via Open-Meteo</p>
+        </div>
+      </div>
+      <div class="model-pill"><span class="pulse"></span>64-member AI ensemble · up to 15 days</div>
+    </header>
+    <div class="retro-marquee" aria-hidden="true"><div class="retro-marquee-track"><b>*** RAIN SCOPE INDIA ***</b> &nbsp; <i>CLICK MAP TO DROP PIN</i> &nbsp; <strong>64 WEATHER FUTURES LOADED</strong> &nbsp; TEMPERATURE + RAIN ONLY &nbsp; <b>*** WEATHER TERMINAL ONLINE ***</b></div></div>
+
+    <main class="shell">
+      <section class="panel left-panel" aria-label="Choose location and forecast horizon">
+        <div class="panel-head">
+          <div>
+            <div class="eyebrow">1 · Choose a place</div>
+            <h2>Drop a pin anywhere in India</h2>
+            <p class="hint">Tap the map, search a city, or enter coordinates.</p>
+          </div>
+        </div>
+
+        <div class="map-wrap">
+          <div id="map" role="application" aria-label="Interactive map of India. Click to drop a weather forecast pin.">
+            <div id="tiles"></div>
+            <div id="tileFallback" class="tile-fallback">Map tiles unavailable. You can still use coordinates.</div>
+            <div id="marker" class="marker" aria-hidden="true">
+              <svg viewBox="0 0 38 48" fill="none">
+                <path d="M19 46s15-16.7 15-28A15 15 0 1 0 4 18c0 11.3 15 28 15 28Z" fill="#1267E9" stroke="white" stroke-width="2.5"/>
+                <circle cx="19" cy="18" r="6" fill="white"/>
+              </svg>
+            </div>
+            <div class="map-crosshair"></div>
+            <div class="map-note">Tap to pin · drag to pan · pinch or +/− to zoom.</div>
+            <div class="map-toolbar">
+              <button class="map-btn locate-map-btn" id="locateMap" type="button" aria-label="Find my current location" title="Find my location">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
+                  <circle cx="12" cy="12" r="8"></circle>
+                </svg>
+              </button>
+              <button class="map-btn" id="zoomIn" type="button" aria-label="Zoom in">+</button>
+              <button class="map-btn" id="zoomOut" type="button" aria-label="Zoom out">−</button>
+              <div class="map-zoom-readout" id="mapZoomReadout" aria-hidden="true">Z5</div>
+            </div>
+            <div class="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></div>
+          </div>
+        </div>
+
+        <div class="location-tools">
+          <div class="search-row">
+            <div class="searchbox">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+              <input id="placeSearch" type="search" autocomplete="off" placeholder="Search area, locality, landmark or city" aria-label="Search an area, locality, landmark or city in India" />
+              <button id="clearSearch" class="clear-search" type="button" aria-label="Clear search">×</button>
+              <div id="searchResults" class="search-results" role="listbox"></div>
+            </div>
+            <button id="locateMe" class="locate-btn" type="button">Use my location</button>
+          </div>
+          <div class="coords">
+            <div class="field"><label for="latInput">Latitude</label><input id="latInput" inputmode="decimal" value="17.4500" /></div>
+            <div class="field"><label for="lonInput">Longitude</label><input id="lonInput" inputmode="decimal" value="78.3000" /></div>
+          </div>
+          <div id="locationError" class="error-card"></div>
+        </div>
+
+        <div class="controls">
+          <div class="controls-title"><span>2 · Forecast horizon</span><span id="horizonLabel">Next 24 hours</span></div>
+          <div class="horizon">
+            <input id="horizonN" type="number" min="1" max="24" step="1" value="24" aria-label="Forecast length" />
+            <div class="segmented" role="group" aria-label="Forecast horizon unit">
+              <button id="hoursBtn" class="active" type="button">Hours</button>
+              <button id="daysBtn" type="button">Days</button>
+            </div>
+          </div>
+          <button id="forecastBtn" class="forecast-btn" type="button"><span class="spinner"></span><span class="btn-text">Show forecast</span></button>
+          <p class="microcopy">Hours are limited to 1–24. For anything longer, select Days (1–15). Days are rolling 24-hour periods and only future time is requested.</p>
+        </div>
+      </section>
+
+      <section class="panel forecast-panel" aria-live="polite">
+        <div id="emptyState" class="empty">
+          <div>
+            <div class="empty-art" aria-hidden="true">
+              <svg width="62" height="62" viewBox="0 0 64 64" fill="none">
+                <path d="M17 38c-5.5 0-10-4.1-10-9.4 0-5.1 4.1-9.2 9.3-9.4C18.1 12.1 24.6 7 32.3 7c8.7 0 15.9 6.7 16.5 15.2 5 .7 8.9 4.9 8.9 10 0 5.6-4.6 10.1-10.3 10.1H17.8" fill="#DDEEFF"/>
+                <path d="M22 41.5 18.5 49M32.5 41.5 29 49M43 41.5 39.5 49" stroke="#2677E8" stroke-width="3" stroke-linecap="round"/>
+                <path d="M18.5 55h28" stroke="#F0A027" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+              </svg>
+            </div>
+            <h2>Your forecast will appear here</h2>
+            <p>Pick a location and horizon, then run the forecast. You’ll get a temperature trend, expected rain, ensemble rain chance, and daily summaries.</p>
+            <div class="arrow">Start with the map on the left</div>
+          </div>
+        </div>
+
+        <div id="loadingOverlay" class="loading-overlay"><div class="loader-card"><span class="spinner"></span>Reading 64 possible weather futures…</div></div>
+
+        <div id="forecastContent" class="forecast-content">
+          <div class="forecast-top">
+            <div>
+              <div class="eyebrow">WeatherNext 2 forecast</div>
+              <h2 id="forecastTitle">Hyderabad area</h2>
+              <div class="sub" id="forecastSub">17.4500°N, 78.3000°E · Next 48 hours</div>
+            </div>
+            <div class="forecast-status">
+              <div class="weather-mood" id="weatherMood">AUTO THEME · SUNNY</div>
+              <div class="updated" id="updatedAt">Updated now</div>
+            </div>
+          </div>
+
+          <div class="hero-grid">
+            <article class="hero primary">
+              <div class="label">Rain outlook</div>
+              <div class="value" id="rainOutlook">—</div>
+              <div class="meta" id="rainMeta">—</div>
+              <div class="mini-icon" aria-hidden="true">

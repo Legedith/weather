@@ -1,0 +1,178 @@
+      const y = (0.5 - Math.log((1+s)/(1-s)) / (4*Math.PI)) * scale;
+      return { x, y };
+    }
+    function unproject(x, y, z){
+      const scale = TILE_SIZE * Math.pow(2, z);
+      const lon = x / scale * 360 - 180;
+      const n = Math.PI - 2 * Math.PI * y / scale;
+      const lat = 180 / Math.PI * Math.atan(Math.sinh(n));
+      return { lat, lon };
+    }
+    function clampCenter(c){ return { lat: clamp(c.lat, INDIA.minLat, INDIA.maxLat), lon: clamp(c.lon, INDIA.minLon, INDIA.maxLon) }; }
+    function mapTopLeft(){
+      const centerPx = project(mapCenter.lat, mapCenter.lon, zoom);
+      return { x: centerPx.x - map.clientWidth/2, y: centerPx.y - map.clientHeight/2 };
+    }
+    function renderMap(){
+      const w = map.clientWidth, h = map.clientHeight;
+      if (!w || !h) return;
+      mapCenter = clampCenter(mapCenter);
+      if(mapZoomReadout) mapZoomReadout.textContent='Z'+zoom;
+      const tl = mapTopLeft();
+      const n = Math.pow(2, zoom);
+      const x0 = Math.floor(tl.x/TILE_SIZE)-1, x1 = Math.floor((tl.x+w)/TILE_SIZE)+1;
+      const y0 = Math.max(0,Math.floor(tl.y/TILE_SIZE)-1), y1 = Math.min(n-1,Math.floor((tl.y+h)/TILE_SIZE)+1);
+      tiles.innerHTML = '';
+      tileErrors = 0; tileLoads = 0;
+      for(let ty=y0; ty<=y1; ty++){
+        for(let tx=x0; tx<=x1; tx++){
+          const wrappedX = ((tx % n) + n) % n;
+          const img = new Image();
+          img.className='tile';
+          img.alt='';
+          img.decoding='async';
+          img.src=`https://tile.openstreetmap.org/${zoom}/${wrappedX}/${ty}.png`;
+          img.style.left=(tx*TILE_SIZE-tl.x)+'px';
+          img.style.top=(ty*TILE_SIZE-tl.y)+'px';
+          img.onload=()=>{ tileLoads++; if(tileLoads>2) tileFallback.style.display='none'; };
+          img.onerror=()=>{ tileErrors++; if(tileErrors>3 && tileLoads===0) tileFallback.style.display='grid'; };
+          tiles.appendChild(img);
+        }
+      }
+      renderMarker();
+    }
+    function renderMarker(){
+      const tl = mapTopLeft();
+      const p = project(pin.lat,pin.lon,zoom);
+      marker.style.left = (p.x-tl.x)+'px';
+      marker.style.top = (p.y-tl.y)+'px';
+    }
+    function pointToLatLon(clientX, clientY){
+      const rect=map.getBoundingClientRect();
+      const tl=mapTopLeft();
+      return unproject(tl.x + clientX-rect.left, tl.y + clientY-rect.top, zoom);
+    }
+    function setPin(lat, lon, opts={}){
+      if (!insideIndia(lat,lon)) { showToast('Choose a point inside the India map bounds.'); return false; }
+      pin={lat:+lat,lon:+lon};
+      latInput.value=pin.lat.toFixed(4); lonInput.value=pin.lon.toFixed(4);
+      if (opts.center !== false) mapCenter={...pin};
+      if (!opts.keepName) selectedPlaceName='';
+      renderMap(); clearError(); saveState();
+      return true;
+    }
+    let drag=null;
+    let pinch=null;
+    const activePointers=new Map();
+    const mapUiSelector='.map-toolbar,.map-note,.attribution';
+    map.querySelectorAll(mapUiSelector).forEach(el=>{
+      ['pointerdown','pointermove','pointerup','pointercancel','click','dblclick'].forEach(type=>{
+        el.addEventListener(type,e=>e.stopPropagation());
+      });
+    });
+    function pointerDistance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+    function pointerMidpoint(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
+    function setZoomAt(nextZoom, clientX, clientY, save=true){
+      nextZoom=clamp(Math.round(nextZoom),MIN_ZOOM,MAX_ZOOM);
+      if(nextZoom===zoom) return;
+      const rect=map.getBoundingClientRect();
+      const anchor=pointToLatLon(clientX,clientY);
+      const p=project(anchor.lat,anchor.lon,nextZoom);
+      const centerPx={
+        x:p.x-(clientX-rect.left-map.clientWidth/2),
+        y:p.y-(clientY-rect.top-map.clientHeight/2)
+      };
+      zoom=nextZoom;
+      mapCenter=clampCenter(unproject(centerPx.x,centerPx.y,zoom));
+      renderMap();
+      if(save) saveState();
+    }
+    function zoomAtCenter(delta){
+      const r=map.getBoundingClientRect();
+      setZoomAt(zoom+delta,r.left+r.width/2,r.top+r.height/2,true);
+    }
+    map.addEventListener('pointerdown',e=>{
+      if(e.target.closest(mapUiSelector)) return;
+      if(e.button!==0 && e.pointerType==='mouse') return;
+      activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      try { map.setPointerCapture(e.pointerId); } catch {}
+      if(activePointers.size===1){
+        drag={id:e.pointerId,x:e.clientX,y:e.clientY,moved:0,center:{...mapCenter}};
+        pinch=null;
+      }else if(activePointers.size===2){
+        const [a,b]=[...activePointers.values()];
+        pinch={startDistance:Math.max(1,pointerDistance(a,b)),startZoom:zoom,lastZoom:zoom};
+        drag=null;
+        tiles.style.transform=''; marker.style.translate='';
+      }
+      map.classList.add('dragging');
+    });
+    map.addEventListener('pointermove',e=>{
+      if(!activePointers.has(e.pointerId)) return;
+      activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(activePointers.size>=2){
+        const [a,b]=[...activePointers.values()].slice(0,2);
+        if(!pinch) pinch={startDistance:Math.max(1,pointerDistance(a,b)),startZoom:zoom,lastZoom:zoom};
+        const ratio=Math.max(.25,Math.min(4,pointerDistance(a,b)/pinch.startDistance));
+        const next=clamp(Math.round(pinch.startZoom+Math.log2(ratio)),MIN_ZOOM,MAX_ZOOM);
+        if(next!==zoom){
+          const mid=pointerMidpoint(a,b);
+          setZoomAt(next,mid.x,mid.y,false);
+        }
+        return;
+      }
+      if(!drag || e.pointerId!==drag.id) return;
+      const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+      drag.moved=Math.abs(dx)+Math.abs(dy);
+      if(drag.moved>3){
+        tiles.style.transform=`translate(${dx}px,${dy}px)`;
+        marker.style.translate=`${dx}px ${dy}px`;
+      }
+    });
+    function endMapPointer(e){
+      const wasPinching=!!pinch || activePointers.size>1;
+      activePointers.delete(e.pointerId);
+      if(wasPinching){
+        if(activePointers.size<2){pinch=null;saveState();}
+        if(activePointers.size===0) map.classList.remove('dragging');
+        drag=null;
+        return;
+      }
+      if(!drag || e.pointerId!==drag.id){
+        if(activePointers.size===0) map.classList.remove('dragging');
+        return;
+      }
+      const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+      const wasClick=drag.moved<5;
+      map.classList.remove('dragging');
+      tiles.style.transform=''; marker.style.translate='';
+      if(wasClick){
+        const p=pointToLatLon(e.clientX,e.clientY);
+        if(setPin(p.lat,p.lon,{center:false})) selectedPlaceName='';
+      } else {
+        const cp=project(drag.center.lat,drag.center.lon,zoom);
+        mapCenter=clampCenter(unproject(cp.x-dx,cp.y-dy,zoom));
+        renderMap(); saveState();
+      }
+      drag=null;
+    }
+    map.addEventListener('pointerup',endMapPointer);
+    map.addEventListener('pointercancel',endMapPointer);
+    map.addEventListener('wheel',e=>{
+      if(e.target.closest(mapUiSelector)) return;
+      e.preventDefault();
+      setZoomAt(zoom+(e.deltaY<0?1:-1),e.clientX,e.clientY,true);
+    },{passive:false});
+    document.getElementById('zoomIn').onclick=()=>zoomAtCenter(1);
+    document.getElementById('zoomOut').onclick=()=>zoomAtCenter(-1);
+    if ('ResizeObserver' in window) new ResizeObserver(()=>renderMap()).observe(map);
+    else window.addEventListener('resize', renderMap);
+
+    // ---------- Location controls ----------
+    function commitCoordinateInputs(){
+      const lat=Number(latInput.value),lon=Number(lonInput.value);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)){showError('Enter valid numeric latitude and longitude.');return;}
+      if(!insideIndia(lat,lon)){showError('Coordinates must be within the India map bounds (roughly 6.2–37.7°N, 68–97.6°E).');return;}
+      setPin(lat,lon); selectedPlaceName='';
+    }
+    latInput.addEventListener('change',commitCoordinateInputs); lonInput.addEventListener('change',commitCoordinateInputs);

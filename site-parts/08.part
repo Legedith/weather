@@ -1,0 +1,141 @@
+    [latInput,lonInput].forEach(el=>el.addEventListener('keydown',e=>{if(e.key==='Enter'){commitCoordinateInputs();el.blur();}}));
+
+    placeSearch.addEventListener('input',()=>{
+      clearSearch.classList.toggle('visible',!!placeSearch.value);
+      clearTimeout(searchTimer);
+      const q=placeSearch.value.trim();
+      if(q.length<2){searchResults.classList.remove('open');searchResults.innerHTML='';return;}
+      searchTimer=setTimeout(()=>searchPlaces(q),280);
+    });
+    clearSearch.onclick=()=>{placeSearch.value='';clearSearch.classList.remove('visible');searchResults.classList.remove('open');searchResults.innerHTML='';placeSearch.focus();};
+    placeSearch.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();clearTimeout(searchTimer);const q=placeSearch.value.trim();if(q.length>=2) searchPlaces(q);}});
+    document.addEventListener('click',e=>{if(!e.target.closest('.searchbox'))searchResults.classList.remove('open');});
+    function uniqueParts(parts){
+      const out=[];
+      for(const v of parts){
+        const t=String(v||'').trim();
+        if(t && !out.some(x=>x.toLowerCase()===t.toLowerCase())) out.push(t);
+      }
+      return out;
+    }
+    function normalizePhotonFeature(f){
+      const p=f&&f.properties||{};
+      const c=f&&f.geometry&&f.geometry.coordinates||[];
+      const lon=Number(c[0]),lat=Number(c[1]);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)||!insideIndia(lat,lon)) return null;
+      const name=p.name||p.street||p.district||p.city||p.county||p.state||'Unnamed place';
+      const detail=uniqueParts([p.street,p.district,p.city,p.county,p.state,p.postcode]).filter(x=>x.toLowerCase()!==String(name).toLowerCase());
+      return {name,latitude:lat,longitude:lon,admin:detail.slice(0,4).join(', ')||'India',type:p.type||p.osm_value||p.osm_key||'place'};
+    }
+    async function photonSearch(q,signal){
+      const u=new URL('https://photon.komoot.io/api/');
+      u.searchParams.set('q',q);
+      u.searchParams.set('limit','10');
+      u.searchParams.set('lang','en');
+      u.searchParams.set('countrycode','IN');
+      u.searchParams.set('bbox',`${INDIA.minLon},${INDIA.minLat},${INDIA.maxLon},${INDIA.maxLat}`);
+      u.searchParams.set('lat',String(mapCenter.lat));
+      u.searchParams.set('lon',String(mapCenter.lon));
+      u.searchParams.set('zoom',String(Math.min(15,zoom)));
+      u.searchParams.set('location_bias_scale','0.35');
+      const r=await axios.get(u.toString(),{signal});
+      const data=r.data;
+      return (data.features||[]).map(normalizePhotonFeature).filter(Boolean);
+    }
+    async function openMeteoSearch(q,signal){
+      const u=new URL('https://geocoding-api.open-meteo.com/v1/search');
+      u.searchParams.set('name',q);u.searchParams.set('count','8');u.searchParams.set('language','en');u.searchParams.set('format','json');u.searchParams.set('countryCode','IN');
+      const r=await axios.get(u.toString(),{signal});
+      const data=r.data;
+      return (data.results||[]).filter(x=>insideIndia(x.latitude,x.longitude)).map(x=>({
+        name:x.name,latitude:x.latitude,longitude:x.longitude,
+        admin:uniqueParts([x.admin2,x.admin1,x.country]).join(', ')||'India',type:'city / place'
+      }));
+    }
+    function renderSearchResults(results){
+      searchResults.innerHTML='';
+      if(!results.length){
+        searchResults.innerHTML='<div style="padding:11px;color:#685f6b;font-size:11.5px;line-height:1.5">No matching area found. Try a locality, landmark, neighbourhood, town, district, or PIN-code name.</div>';
+      }
+      results.forEach(x=>{
+        const b=document.createElement('button');b.type='button';b.className='search-result';b.setAttribute('role','option');
+        b.innerHTML=`<strong>${escapeHTML(x.name)}</strong><span>${escapeHTML(x.admin||'India')}</span><em class="result-type">${escapeHTML(String(x.type||'place').replaceAll('_',' '))}</em>`;
+        b.onclick=()=>{
+          selectedPlaceName=x.name+(x.admin?`, ${x.admin.split(',')[0]}`:'');
+          pin={lat:+x.latitude,lon:+x.longitude};
+          latInput.value=pin.lat.toFixed(4);lonInput.value=pin.lon.toFixed(4);
+          mapCenter={...pin};
+          zoom=Math.max(14,Math.min(MAX_ZOOM,zoom));
+          renderMap();clearError();saveState();
+          placeSearch.value=x.name;clearSearch.classList.add('visible');searchResults.classList.remove('open');
+          showToast(`Pinned ${x.name}`);
+        };
+        searchResults.appendChild(b);
+      });
+      searchResults.classList.add('open');
+    }
+    async function searchPlaces(q){
+      if(searchAbort) searchAbort.abort();
+      searchAbort=new AbortController();
+      try{
+        let results=[];
+        try{results=await photonSearch(q,searchAbort.signal);}catch(err){if(err.name==='AbortError') throw err;}
+        if(!results.length) results=await openMeteoSearch(q,searchAbort.signal);
+        renderSearchResults(results);
+      }catch(err){
+        if(err.name!=='AbortError'){
+          searchResults.innerHTML='<div style="padding:11px;color:#9d5555;font-size:11.5px;line-height:1.5">Place search is unavailable right now. You can still tap the map or enter coordinates.</div>';
+          searchResults.classList.add('open');
+        }
+      }
+    }
+    function setLocatingState(on){
+      locateMe.disabled=on;
+      locateMe.textContent=on?'Finding…':'Use my location';
+      locateMe.classList.toggle('locating',on);
+      locateMap.disabled=on;
+      locateMap.classList.toggle('locating',on);
+      locateMap.setAttribute('aria-busy',on?'true':'false');
+    }
+    function applyLocatedPosition(pos, precise=false){
+      const {latitude,longitude,accuracy}=pos.coords;
+      if(!insideIndia(latitude,longitude)){
+        showError('Your current location is outside the India map bounds.');
+        showToast('Current location is outside India.');
+        return false;
+      }
+      selectedPlaceName='Current location';
+      placeSearch.value='Current location';
+      clearSearch.classList.add('visible');
+      pin={lat:+latitude,lon:+longitude};
+      latInput.value=pin.lat.toFixed(4);lonInput.value=pin.lon.toFixed(4);
+      mapCenter={...pin};
+      zoom=Math.max(15,zoom);
+      renderMap();clearError();saveState();
+      const accuracyText=Number.isFinite(accuracy)?` · ±${Math.round(accuracy)} m`:'';
+      showToast(`${precise?'Refined':'Found'} your location${accuracyText}`);
+      return true;
+    }
+    function geolocationMessage(err){
+      if(!window.isSecureContext) return 'GPS is blocked because this page is not in a secure context. Open the downloaded HTML normally in a browser that allows file location access, or serve it over HTTPS/localhost.';
+      if(err&&err.code===1) return "Location permission was denied or blocked. Open this site's permissions, allow Location, then press GPS again.";
+      if(err&&err.code===2) return 'Your device could not determine a position. Make sure system Location/GPS is enabled, then try again.';
+      if(err&&err.code===3) return 'Location timed out. Move somewhere with a clearer GPS/Wi-Fi signal and try again.';
+      return 'Could not determine your location. You can still search for an area, tap the map, or enter coordinates.';
+    }
+    function locateCurrentPosition(){
+      clearError();
+      if(!navigator.geolocation){
+        showError(geolocationMessage());
+        showToast('GPS is unavailable in this browser.');
+        return;
+      }
+      setLocatingState(true);
+      // Start with a quick network/Wi-Fi fix. Requiring high accuracy first can time out
+      // on phones indoors before the browser has a usable coarse position.
+      navigator.geolocation.getCurrentPosition(pos=>{
+        setLocatingState(false);
+        if(!applyLocatedPosition(pos,false)) return;
+        // Refine in the background when the device can provide a better GPS fix.
+        navigator.geolocation.getCurrentPosition(refined=>{
+          if(refined.coords.accuracy<=pos.coords.accuracy) applyLocatedPosition(refined,true);

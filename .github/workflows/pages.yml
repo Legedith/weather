@@ -1,0 +1,58 @@
+name: Deploy RainScope to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build standalone page
+        shell: bash
+        run: |
+          mkdir -p dist
+          cat \
+            site-parts/00.part \
+            site-parts/01.part \
+            site-parts/02.part \
+            site-parts/03.part \
+            site-parts/04.part \
+            site-parts/05.part \
+            site-parts/06.part \
+            site-parts/07.part \
+            site-parts/08.part \
+            site-parts/09.part \
+            site-parts/10.part \
+            site-parts/11.part \
+            > dist/index.html
+          touch dist/.nojekyll
+          test "$(wc -c < dist/index.html)" -gt 80000
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

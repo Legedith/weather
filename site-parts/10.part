@@ -1,0 +1,98 @@
+        outlook='Rain looks likely';meta=`Strongest signal ${formatPointTime(peak.time)} · peak ${Math.round(peak.rainProb)}%`;
+      }else{
+        outlook='Rain is possible';meta=`${wet.length?`First notable window ${formatPointTime(wet[0].time)}`:`Peak signal ${formatPointTime(peak.time)}`} · ${Math.round(peak.rainProb)}% peak`;
+      }
+      document.getElementById('rainOutlook').textContent=outlook;
+      document.getElementById('rainMeta').textContent=meta;
+      document.getElementById('nextTemp').textContent=`${Math.round(first.temp)}°C`;
+      document.getElementById('tempMeta').textContent=`Likely range ${Math.round(first.temp10)}–${Math.round(first.temp90)}°C`;
+      document.getElementById('totalRain').textContent=`${formatRain(totalRain)} mm`;
+      document.getElementById('totalRainMeta').textContent=`Peak hourly chance ${Math.round(peak.rainProb)}%`;
+      document.getElementById('tempRange').textContent=`${Math.round(low)}–${Math.round(high)}°`;
+      const avgSpread=mean(points.map(p=>p.temp90-p.temp10));
+      document.getElementById('rangeMeta').textContent=`Typical model spread ±${(avgSpread/2).toFixed(1)}°C`;
+
+      renderDays(points);
+      renderTimeline(points);
+      requestAnimationFrame(()=>drawChart(points));
+    }
+    function chooseWeatherTheme(points){
+      // Theme the page from the near-term part of the selected forecast. This avoids
+      // a rainy hour 12 days away turning an otherwise sunny current view blue.
+      const sample=points.slice(0,Math.min(24,points.length));
+      if(!sample.length)return {name:'sunny',label:'SUNNY'};
+      const avgTemp=mean(sample.map(p=>p.temp));
+      const avgCloud=mean(sample.map(p=>Number.isFinite(p.cloud)?p.cloud:35));
+      const avgRainProb=mean(sample.map(p=>p.rainProb));
+      const peakRainProb=Math.max(...sample.map(p=>p.rainProb));
+      const wetShare=sample.filter(p=>p.rainProb>=45 || p.rain>=.2).length/sample.length;
+      const immediate=sample.slice(0,Math.min(4,sample.length));
+      const dayShare=immediate.filter(p=>p.isDay).length/immediate.length;
+      if(peakRainProb>=60 || (avgRainProb>=32 && wetShare>=.25)) return {name:'rainy',label:'RAINY'};
+      if(avgTemp<=19) return {name:'chilly',label:'CHILLY'};
+      if(dayShare<.38) return {name:'night',label:'NIGHT'};
+      if(avgCloud>=68) return {name:'cloudy',label:'CLOUDY'};
+      return {name:'sunny',label:'SUNNY'};
+    }
+    function applyWeatherTheme(points){
+      const theme=chooseWeatherTheme(points);
+      document.body.dataset.weatherTheme=theme.name;
+      if(weatherMood) weatherMood.textContent=`AUTO THEME · ${theme.label}`;
+      const colors={sunny:'#ff7a00',cloudy:'#6075a8',rainy:'#3155ff',night:'#5147c8',chilly:'#277fa8'};
+      if(themeMeta) themeMeta.setAttribute('content',colors[theme.name]||'#3155ff');
+    }
+
+    function formatRain(v){if(v<.05)return '0.0';if(v<10)return v.toFixed(1);return Math.round(v).toString();}
+    function parseTimeString(s){
+      const [date,time='00:00']=String(s).split('T'); const [y,m,d]=date.split('-').map(Number); const [hh,mm]=time.split(':').map(Number);return {y,m,d,hh,mm,date};
+    }
+    function formatPointTime(s, includeDate=false){
+      const p=parseTimeString(s);const fake=new Date(Date.UTC(p.y,p.m-1,p.d));const day=fake.toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'});const h=p.hh%12||12;const ap=p.hh<12?'AM':'PM';return includeDate?`${day} ${p.d} · ${h}${p.mm?':'+String(p.mm).padStart(2,'0'):''} ${ap}`:`${day} ${h}${p.mm?':'+String(p.mm).padStart(2,'0'):''} ${ap}`;
+    }
+    function dateLabel(date){const [y,m,d]=date.split('-').map(Number);const fake=new Date(Date.UTC(y,m-1,d));return {day:fake.toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}),date:fake.toLocaleDateString('en-IN',{day:'numeric',month:'short',timeZone:'UTC'})};}
+
+    function renderDays(points){
+      const groups=new Map();
+      points.forEach(p=>{const date=p.time.slice(0,10);if(!groups.has(date))groups.set(date,[]);groups.get(date).push(p);});
+      const grid=document.getElementById('daysGrid');grid.innerHTML='';
+      for(const [date,arr] of groups){
+        const label=dateLabel(date);const lows=arr.map(x=>x.temp);const minT=Math.min(...lows),maxT=Math.max(...lows);const rain=arr.reduce((s,x)=>s+x.rain,0);const chance=Math.max(...arr.map(x=>x.rainProb));
+        const el=document.createElement('article');el.className='day-card';
+        el.innerHTML=`<div class="day-head"><div><div class="day-name">${label.day}</div><div class="day-date">${label.date}${arr.length<20?' · partial':''}</div></div><div class="rain-badge">${Math.round(chance)}% rain</div></div><div class="day-temp">${Math.round(maxT)}° <small>/ ${Math.round(minT)}°C</small></div><div class="day-rain">${formatRain(rain)} mm expected</div><div class="rain-track"><span style="width:${clamp(chance,2,100)}%"></span></div>`;
+        grid.appendChild(el);
+      }
+    }
+    function renderTimeline(points){
+      const body=document.getElementById('timelineBody');body.innerHTML='';
+      const frag=document.createDocumentFragment();
+      points.forEach(p=>{
+        const t=parseTimeString(p.time);const fake=new Date(Date.UTC(t.y,t.m-1,t.d));const day=fake.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});const hour=(t.hh%12||12)+(t.mm?':'+String(t.mm).padStart(2,'0'):'')+(t.hh<12?' AM':' PM');
+        const row=document.createElement('div');row.className='timeline-row';
+        row.innerHTML=`<div><div class="time-main">${hour}</div><div class="time-sub">${day}</div></div><div class="temp-cell">${Math.round(p.temp)}°C</div><div class="rain-cell"><span class="rain-symbol" style="opacity:${.25+.75*p.rainProb/100}"></span>${Math.round(p.rainProb)}%</div><div class="amount-cell">${formatRain(p.rain)} mm</div>`;
+        frag.appendChild(row);
+      });
+      body.appendChild(frag);
+    }
+
+    // ---------- Canvas chart ----------
+    function drawChart(points){
+      if(!points.length)return;
+      const rect=canvas.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(rect.height*dpr));const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,rect.width,rect.height);
+      const W=rect.width,H=rect.height;const pad={l:38,r:12,t:22,b:30};const plotW=W-pad.l-pad.r,plotH=H-pad.t-pad.b;
+      let tMin=Math.min(...points.map(p=>p.temp10)),tMax=Math.max(...points.map(p=>p.temp90));if(tMax-tMin<5){tMin-=2;tMax+=2;}tMin=Math.floor(tMin-1);tMax=Math.ceil(tMax+1);
+      const x=i=>pad.l+(points.length===1?.5:i/(points.length-1))*plotW;
+      const yT=v=>pad.t+(tMax-v)/(tMax-tMin)*plotH;
+      const yRainChance=v=>pad.t+plotH-(clamp(v,0,100)/100)*plotH;
+
+      // Grid + temperature scale only. Rain deliberately has no y-axis; a 45%
+      // probability bar occupies 45% of the full plot height.
+      ctx.lineWidth=1;ctx.strokeStyle='rgba(21,21,27,.18)';ctx.fillStyle='#494756';ctx.font='bold 10px Courier New,monospace';
+      for(let j=0;j<=4;j++){const y=pad.t+j*plotH/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();const val=tMax-j*(tMax-tMin)/4;ctx.fillText(`${Math.round(val)}°`,4,y+3);}
+
+      // Rain-chance bars
+      const barW=Math.max(1,Math.min(7,plotW/Math.max(points.length,1)*.72));
+      points.forEach((p,i)=>{if(p.rainProb<.5)return;const xx=x(i)-barW/2,yy=yRainChance(p.rainProb);const grad=ctx.createLinearGradient(0,yy,0,pad.t+plotH);grad.addColorStop(0,'rgba(49,85,255,.88)');grad.addColorStop(1,'rgba(24,217,230,.42)');ctx.fillStyle=grad;roundRect(ctx,xx,yy,barW,pad.t+plotH-yy,Math.min(3,barW/2));ctx.fill();});
+
+      // Uncertainty band
+      ctx.beginPath();points.forEach((p,i)=>{const xx=x(i),yy=yT(p.temp90);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);});for(let i=points.length-1;i>=0;i--)ctx.lineTo(x(i),yT(points[i].temp10));ctx.closePath();ctx.fillStyle='rgba(255,176,0,.18)';ctx.fill();
+
