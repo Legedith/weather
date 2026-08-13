@@ -13,7 +13,6 @@
       document.getElementById('rangeMeta').textContent=`Typical model spread ±${(avgSpread/2).toFixed(1)}°C`;
 
       renderDays(points);
-      renderTimeline(points);
       requestAnimationFrame(()=>drawChart(points));
     }
     function chooseWeatherTheme(points){
@@ -54,16 +53,29 @@
     function renderDays(points){
       const groups=new Map();
       points.forEach(p=>{const date=p.time.slice(0,10);if(!groups.has(date))groups.set(date,[]);groups.get(date).push(p);});
-      const grid=document.getElementById('daysGrid');grid.innerHTML='';
+      const dates=[...groups.keys()];
+      if(!dates.length)return;
+      let selectedDayDate=dates[0];
+      const grid=document.getElementById('daysGrid');grid.innerHTML='';grid.dataset.selectedDate=selectedDayDate;
+      const daySection=grid.previousElementSibling?.querySelector('p');if(daySection)daySection.textContent='Select a day';
+      const emptyHint=document.querySelector('#emptyState .arrow');if(emptyHint)emptyHint.textContent='Tap the map or search for a place';
       for(const [date,arr] of groups){
-        const label=dateLabel(date);const lows=arr.map(x=>x.temp);const minT=Math.min(...lows),maxT=Math.max(...lows);const rain=arr.reduce((s,x)=>s+x.rain,0);const chance=Math.max(...arr.map(x=>x.rainProb));
-        const el=document.createElement('article');el.className='day-card';
+        const label=dateLabel(date);const lows=arr.map(x=>x.temp);const minT=Math.min(...lows),maxT=Math.max(...lows);const rain=arr.reduce((sum,x)=>sum+x.rain,0);const chance=Math.max(...arr.map(x=>x.rainProb));
+        const el=document.createElement('button');el.type='button';el.className='day-card'+(date===selectedDayDate?' selected':'');el.dataset.date=date;el.setAttribute('aria-pressed',date===selectedDayDate?'true':'false');el.setAttribute('aria-label',`${label.day} ${label.date}: ${Math.round(maxT)} to ${Math.round(minT)} degrees, ${Math.round(chance)} percent peak rain chance`);
         el.innerHTML=`<div class="day-head"><div><div class="day-name">${label.day}</div><div class="day-date">${label.date}${arr.length<20?' · partial':''}</div></div><div class="rain-badge">${Math.round(chance)}% rain</div></div><div class="day-temp">${Math.round(maxT)}° <small>/ ${Math.round(minT)}°C</small></div><div class="day-rain">${formatRain(rain)} mm expected</div><div class="rain-track"><span style="width:${clamp(chance,2,100)}%"></span></div>`;
+        el.addEventListener('click',()=>{
+          selectedDayDate=date;grid.dataset.selectedDate=date;
+          grid.querySelectorAll('.day-card').forEach(card=>{const active=card.dataset.date===date;card.classList.toggle('selected',active);card.setAttribute('aria-pressed',active?'true':'false');});
+          renderTimeline(groups.get(date),date);
+        });
         grid.appendChild(el);
       }
+      renderTimeline(groups.get(selectedDayDate),selectedDayDate);
     }
-    function renderTimeline(points){
+    function renderTimeline(points,date){
       const body=document.getElementById('timelineBody');body.innerHTML='';
+      const title=body.closest('.timeline-card')?.previousElementSibling?.querySelector('p');
+      if(date && title){const label=dateLabel(date);title.textContent=`${label.day}, ${label.date}`;}
       const frag=document.createDocumentFragment();
       points.forEach(p=>{
         const t=parseTimeString(p.time);const fake=new Date(Date.UTC(t.y,t.m-1,t.d));const day=fake.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});const hour=(t.hh%12||12)+(t.mm?':'+String(t.mm).padStart(2,'0'):'')+(t.hh<12?' AM':' PM');
@@ -71,10 +83,56 @@
         row.innerHTML=`<div><div class="time-main">${hour}</div><div class="time-sub">${day}</div></div><div class="temp-cell">${Math.round(p.temp)}°C</div><div class="rain-cell"><span class="rain-symbol" style="opacity:${.25+.75*p.rainProb/100}"></span>${Math.round(p.rainProb)}%</div><div class="amount-cell">${formatRain(p.rain)} mm</div>`;
         frag.appendChild(row);
       });
-      body.appendChild(frag);
+      body.appendChild(frag);body.scrollTop=0;
     }
 
     // ---------- Canvas chart ----------
+    function smoothRainChance(points){
+      const raw=points.map(p=>clamp(p.rainProb,0,100));
+      if(raw.length<3)return raw;
+      const radius=raw.length>168?4:raw.length>72?3:2;
+      return raw.map((_,i)=>{
+        let sum=0,weight=0;
+        for(let d=-radius;d<=radius;d++){
+          const j=clamp(i+d,0,raw.length-1),w=radius+1-Math.abs(d);
+          sum+=raw[j]*w;weight+=w;
+        }
+        return sum/weight;
+      });
+    }
+    function traceSmoothCurve(ctx,coords){
+      if(!coords.length)return;
+      ctx.moveTo(coords[0].x,coords[0].y);
+      if(coords.length===1)return;
+      for(let i=1;i<coords.length-1;i++){
+        const midX=(coords[i].x+coords[i+1].x)/2,midY=(coords[i].y+coords[i+1].y)/2;
+        ctx.quadraticCurveTo(coords[i].x,coords[i].y,midX,midY);
+      }
+      const last=coords[coords.length-1],before=coords[Math.max(0,coords.length-2)];
+      ctx.quadraticCurveTo(before.x,before.y,last.x,last.y);
+    }
+    function getRainExtrema(values,maxLabels,minPixelGap,x){
+      const candidates=[];
+      for(let i=1;i<values.length-1;i++){
+        const before=values[i]-values[i-1],after=values[i+1]-values[i];
+        if(before>0 && after<=0 && values[i]>=12)candidates.push({i,type:'peak',v:values[i],score:values[i]+24});
+        else if(before<0 && after>=0){
+          const leftMax=Math.max(...values.slice(Math.max(0,i-12),i)),rightMax=Math.max(...values.slice(i+1,Math.min(values.length,i+13)));
+          if(Math.min(leftMax,rightMax)>=22 && values[i]<=Math.min(leftMax,rightMax)-10)candidates.push({i,type:'trough',v:values[i],score:30-values[i]});
+        }
+      }
+      if(values.length){const gi=values.indexOf(Math.max(...values));if(values[gi]>=12 && !candidates.some(c=>c.i===gi))candidates.push({i:gi,type:'peak',v:values[gi],score:values[gi]+40});}
+      candidates.sort((a,b)=>b.score-a.score);
+      const picked=[];
+      for(const c of candidates){if(picked.every(p=>Math.abs(x(p.i)-x(c.i))>=minPixelGap)){picked.push(c);if(picked.length>=maxLabels)break;}}
+      return picked.sort((a,b)=>a.i-b.i);
+    }
+    function drawRainLabel(ctx,xPos,yPos,value,type,W,pad,plotH){
+      const text=`${Math.round(value)}%`;ctx.font='bold 9px Courier New,monospace';const tw=ctx.measureText(text).width,w=tw+8,h=16;
+      let xx=clamp(xPos-w/2,pad.l,W-pad.r-w),yy=type==='peak'?yPos-h-7:yPos+7;yy=clamp(yy,pad.t+2,pad.t+plotH-h-2);
+      ctx.fillStyle='rgba(255,253,247,.94)';ctx.strokeStyle='#3155ff';ctx.lineWidth=1.5;roundRect(ctx,xx,yy,w,h,3);ctx.fill();ctx.stroke();
+      ctx.fillStyle='#1532c6';ctx.textAlign='center';ctx.fillText(text,xx+w/2,yy+11);ctx.textAlign='left';
+    }
     function drawChart(points){
       if(!points.length)return;
       const rect=canvas.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(rect.height*dpr));const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,rect.width,rect.height);
@@ -84,15 +142,15 @@
       const yT=v=>pad.t+(tMax-v)/(tMax-tMin)*plotH;
       const yRainChance=v=>pad.t+plotH-(clamp(v,0,100)/100)*plotH;
 
-      // Grid + temperature scale only. Rain deliberately has no y-axis; a 45%
-      // probability bar occupies 45% of the full plot height.
       ctx.lineWidth=1;ctx.strokeStyle='rgba(21,21,27,.18)';ctx.fillStyle='#494756';ctx.font='bold 10px Courier New,monospace';
       for(let j=0;j<=4;j++){const y=pad.t+j*plotH/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();const val=tMax-j*(tMax-tMin)/4;ctx.fillText(`${Math.round(val)}°`,4,y+3);}
 
-      // Rain-chance bars
-      const barW=Math.max(1,Math.min(7,plotW/Math.max(points.length,1)*.72));
-      points.forEach((p,i)=>{if(p.rainProb<.5)return;const xx=x(i)-barW/2,yy=yRainChance(p.rainProb);const grad=ctx.createLinearGradient(0,yy,0,pad.t+plotH);grad.addColorStop(0,'rgba(49,85,255,.88)');grad.addColorStop(1,'rgba(24,217,230,.42)');ctx.fillStyle=grad;roundRect(ctx,xx,yy,barW,pad.t+plotH-yy,Math.min(3,barW/2));ctx.fill();});
+      const rainSmooth=smoothRainChance(points),rainCoords=rainSmooth.map((v,i)=>({x:x(i),y:yRainChance(v)}));
+      if(rainCoords.length){
+        ctx.beginPath();ctx.moveTo(rainCoords[0].x,pad.t+plotH);traceSmoothCurve(ctx,rainCoords);ctx.lineTo(rainCoords[rainCoords.length-1].x,pad.t+plotH);ctx.closePath();
+        const rainGrad=ctx.createLinearGradient(0,pad.t,0,pad.t+plotH);rainGrad.addColorStop(0,'rgba(49,85,255,.52)');rainGrad.addColorStop(.55,'rgba(49,85,255,.25)');rainGrad.addColorStop(1,'rgba(24,217,230,.10)');ctx.fillStyle=rainGrad;ctx.fill();
+        ctx.beginPath();traceSmoothCurve(ctx,rainCoords);ctx.strokeStyle='rgba(49,85,255,.95)';ctx.lineWidth=2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();
+      }
 
-      // Uncertainty band
       ctx.beginPath();points.forEach((p,i)=>{const xx=x(i),yy=yT(p.temp90);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);});for(let i=points.length-1;i>=0;i--)ctx.lineTo(x(i),yT(points[i].temp10));ctx.closePath();ctx.fillStyle='rgba(255,176,0,.18)';ctx.fill();
 

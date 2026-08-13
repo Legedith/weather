@@ -1,11 +1,10 @@
-      // Temperature line
       ctx.beginPath();points.forEach((p,i)=>{const xx=x(i),yy=yT(p.temp);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);});ctx.strokeStyle='#cc7200';ctx.lineWidth=2.6;ctx.lineJoin='miter';ctx.lineCap='square';ctx.stroke();
       if(points.length<=72){points.forEach((p,i)=>{ctx.beginPath();ctx.arc(x(i),yT(p.temp),2.1,0,Math.PI*2);ctx.fillStyle='#ffb000';ctx.fill();});}
 
-      // X labels
-      ctx.fillStyle='#494756';ctx.font='bold 9.5px Courier New,monospace';ctx.textAlign='center';const labels=Math.min(5,points.length);for(let j=0;j<labels;j++){const idx=Math.round(j*(points.length-1)/Math.max(1,labels-1));const label=points.length<=72?formatPointTime(points[idx].time,false):formatPointTime(points[idx].time,true).split(' · ')[0];ctx.fillText(label,x(idx),H-8);}
-      ctx.textAlign='left';
-      latestChartLayout={points,x,yT,pad,plotW,plotH,W,H};
+      const extrema=getRainExtrema(rainSmooth,W<520?4:7,W<520?58:66,x);extrema.forEach(e=>drawRainLabel(ctx,x(e.i),yRainChance(e.v),e.v,e.type,W,pad,plotH));
+
+      ctx.fillStyle='#494756';ctx.font='bold 9.5px Courier New,monospace';ctx.textAlign='center';const labels=Math.min(5,points.length);for(let j=0;j<labels;j++){const idx=Math.round(j*(points.length-1)/Math.max(1,labels-1));const label=points.length<=72?formatPointTime(points[idx].time,false):formatPointTime(points[idx].time,true).split(' · ')[0];ctx.fillText(label,x(idx),H-8);}ctx.textAlign='left';
+      latestChartLayout={points,x,yT,pad,plotW,plotH,W,H,rainSmooth};
     }
     function roundRect(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
     window.addEventListener('resize',()=>{if(latestPoints.length)requestAnimationFrame(()=>drawChart(latestPoints));});
@@ -17,6 +16,7 @@
     chartWrap.addEventListener('mouseleave',()=>chartTooltip.style.display='none');
 
     // Initial UI
+    const initialEmptyHint=document.querySelector('#emptyState .arrow');if(initialEmptyHint)initialEmptyHint.textContent='Tap the map or search for a place';
     latInput.value=pin.lat.toFixed(4);lonInput.value=pin.lon.toFixed(4);setUnit(unit);renderMap();
     setTimeout(()=>renderMap(),80);
   })();

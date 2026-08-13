@@ -80,6 +80,7 @@
     .days{gap:11px}
     .day-card{padding:11px;background:#fff}
     .day-card:nth-child(4n+1){background:#fff6c8}.day-card:nth-child(4n+2){background:#e5fbff}.day-card:nth-child(4n+3){background:#ffe8f3}.day-card:nth-child(4n){background:#e9ffe7}
+    .day-card.selected{outline:3px solid #3155ff;outline-offset:2px;box-shadow:5px 5px 0 #15151b;transform:translate(-1px,-1px)}
     .day-name{font-weight:900;text-transform:uppercase}.day-date{color:#565465;font-weight:700}
     .rain-badge{border:2px solid #15151b;border-radius:2px;background:#c8fbff;color:#15151b;font-weight:900}
     .day-temp{font-weight:900}.day-temp small{color:#555365}.day-rain{color:#494756;font-weight:700}
