@@ -1,1 +1,69 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RainScope India</title></head><body><main><h1>RainScope India</h1><p>Site deployment is being initialized.</p></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f7f8fa">
+  <meta name="description" content="A clearer view of rain and temperature across India. Explore hourly forecasts, compare days, and understand the source behind the numbers.">
+  <title>RainScope India · Your day, a little clearer</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+  <script type="module" src="./assets/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#forecast">Skip to forecast</a>
+  <header class="topbar wrap">
+    <a class="brand" href="./" aria-label="RainScope home"><span class="brand-mark" aria-hidden="true">r<span></span></span><span>rainscope<span class="brand-country">INDIA</span></span></a>
+    <span class="tagline">Your day, a little clearer.</span>
+    <div class="units" role="group" aria-label="Temperature unit"><button type="button" data-unit="c" aria-pressed="true">°C</button><button type="button" data-unit="f" aria-pressed="false">°F</button></div>
+  </header>
+  <main class="wrap layout">
+    <aside class="sidebar" aria-label="Location and settings">
+      <section class="card location-card">
+        <p class="eyebrow">START SOMEWHERE</p><h2>Your place</h2><p class="muted">A city, a neighbourhood, or your own pin.</p>
+        <form id="searchForm" role="search" autocomplete="off">
+          <label class="sr-only" for="placeSearch">Search for a place in India</label>
+          <div class="search-box"><span aria-hidden="true" class="search-glyph"></span><input id="placeSearch" type="search" placeholder="Search a place in India" role="combobox" aria-autocomplete="list" aria-controls="searchResults" aria-expanded="false"><button class="search-submit" type="submit" aria-label="Search">Go</button></div>
+          <div id="searchResults" class="search-results" role="listbox" aria-label="Matching places" hidden></div>
+          <p id="searchStatus" class="small muted" role="status"></p>
+        </form>
+        <button id="locateMe" type="button" class="button secondary full"><span aria-hidden="true">⌖</span> Use my location</button>
+        <div id="savedPlaces" class="saved-places" aria-label="Saved places"></div>
+        <details class="map-details" id="mapDetails"><summary>Choose on the map<span aria-hidden="true">+</span></summary>
+          <div class="map-frame"><div id="map" tabindex="0" role="region" aria-label="Location map. Arrow keys pan; plus and minus zoom; Enter selects the centre."><div id="tiles"></div><div id="marker" aria-hidden="true"></div><div class="map-center" aria-hidden="true">+</div><div id="mapFallback" class="map-fallback" hidden>Map unavailable. Search or enter coordinates below.</div><div class="map-buttons"><button id="zoomIn" type="button" aria-label="Zoom in">+</button><button id="zoomOut" type="button" aria-label="Zoom out">−</button></div><div class="map-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a></div></div></div>
+          <p class="small muted">Tap to pin. Drag to pan. Pinch or use +/− to zoom.</p>
+        </details>
+        <details class="coordinate-details"><summary>Enter coordinates<span aria-hidden="true">+</span></summary><form id="coordinateForm"><div class="coordinate-row"><label>Latitude<input id="latitude" inputmode="decimal" required aria-describedby="boundsHint"></label><label>Longitude<input id="longitude" inputmode="decimal" required aria-describedby="boundsHint"></label></div><p id="boundsHint" class="small muted">India region: 6.2–37.7°N, 68–97.6°E. These rectangular bounds also include neighbouring areas.</p><button type="submit" class="button secondary full">Use coordinates</button></form></details>
+      </section>
+      <section class="card source-card" aria-labelledby="sourceHeading">
+        <p class="eyebrow">BEHIND THE FORECAST</p><h2 id="sourceHeading">Know your source</h2>
+        <label for="provider" class="small">Forecast service</label><select id="provider"><option value="auto">Automatic · prefer Google when connected</option><option value="openmeteo">Free · WeatherNext 2 ensemble</option><option value="google" disabled>Google Weather · not connected</option></select>
+        <p id="connectionStatus" class="small muted">The free ensemble works without an API key.</p>
+        <details id="modelInfo"><summary>What about WeatherNext 3?<span aria-hidden="true">+</span></summary><p class="small">Google announced WeatherNext 3 on 3 September 2026. Open-Meteo currently documents WeatherNext 2, not 3. The optional Google Weather API uses a blend of models and does not return a model version.</p><p class="small">Connecting Google requires a server-side API key. This page never stores one.</p><a class="small" href="https://github.com/Legedith/weather#connecting-google-weather" target="_blank" rel="noopener noreferrer">Connection instructions</a><span class="link-separator"> · </span><a class="small" href="https://developers.google.com/weathernext" target="_blank" rel="noopener noreferrer">Google’s model docs</a></details>
+      </section>
+      <p class="sidebar-note">A forecast is a guide, not a guarantee. For severe weather, follow <a href="https://mausam.imd.gov.in/" target="_blank" rel="noopener noreferrer">official IMD alerts</a>.</p>
+    </aside>
+    <section id="forecast" class="forecast" aria-label="Weather forecast" tabindex="-1">
+      <div class="forecast-heading"><div><p class="eyebrow">THE OUTLOOK</p><h1 id="placeName">Hyderabad area</h1><p id="locationMeta" class="muted small">Getting your forecast…</p></div><div class="forecast-actions"><button id="savePlace" class="button quiet" type="button" aria-pressed="false">Save place</button><button id="sharePlace" class="button quiet" type="button">Share</button><button id="refresh" class="button quiet" type="button">Refresh</button></div></div>
+      <div class="range-row"><div class="range-buttons" role="group" aria-label="Forecast range"><button type="button" data-hours="24" aria-pressed="true">24 hours</button><button type="button" data-hours="72" aria-pressed="false">3 days</button><button type="button" data-hours="168" aria-pressed="false">7 days</button><button type="button" data-hours="360" aria-pressed="false">15 days</button></div><details class="custom-range"><summary>Custom</summary><form id="rangeForm"><label for="customHours">Hours (1–360)</label><div><input id="customHours" type="number" min="1" max="360" value="24" required><button type="submit" class="button secondary">Apply</button></div></form></details></div>
+      <p id="notice" class="notice" role="status" hidden></p>
+      <div id="error" class="error-card" role="alert" hidden><h2>We couldn’t load this forecast.</h2><p id="errorText"></p><button type="button" id="retry" class="button primary">Try again</button><button type="button" id="useFree" class="button secondary">Use free forecast</button></div>
+      <div id="loading" class="loading-card" role="status"><span class="spinner" aria-hidden="true"></span><div><strong>A clearer picture is on its way.</strong><p>Loading the latest available forecast.</p></div></div>
+      <div id="forecastContent" hidden>
+        <div class="source-line"><span id="activeSource" class="source-badge"></span><span id="fetchedAt" class="small muted"></span><span id="googleAttribution" class="gmp-attribution" translate="no" hidden>Google Maps</span></div>
+        <div class="overview">
+          <article class="current-card"><div class="current-top"><span class="eyebrow">THIS HOUR’S FORECAST</span><span id="weatherMark" class="weather-mark" aria-hidden="true"></span></div><div class="temperature" id="currentTemp">—</div><h2 id="condition">Forecast temperature</h2><p id="currentDetail"></p><div class="current-bottom"><span id="currentTime"></span><span>Not a live observation</span></div></article>
+          <article class="plan-card card"><p class="eyebrow">THE NEXT 24 HOURS</p><h2 id="outlook">Your day ahead</h2><p id="outlookDetail" class="muted"></p><div class="window-detail"><span class="window-mark" aria-hidden="true"></span><div><p class="small muted">Lowest 3-hour rain signal</p><strong id="windowTime">—</strong><p id="windowDetail" class="small muted"></p></div></div></article>
+        </div>
+        <div class="stats"><article class="card stat"><p id="rainTotalLabel">Rain · selected range</p><strong id="rainTotal">—</strong><span id="rainTotalDetail">Forecast amount</span></article><article class="card stat"><p id="chanceLabel">Peak hourly rain signal</p><strong id="peakChance">—</strong><span id="peakTime">—</span></article><article class="card stat"><p>Temperature span</p><strong id="tempSpan">—</strong><span>Lowest to highest forecast</span></article></div>
+        <section class="days-section" aria-labelledby="daysHeading"><div class="section-heading"><div><h2 id="daysHeading">One day at a time</h2><p class="small muted">Select a day to explore its hours.</p></div><button type="button" id="allHours" class="text-button" aria-pressed="false">All hours</button></div><div id="days" class="days" aria-label="Daily forecasts"></div></section>
+        <section class="card chart-card" aria-labelledby="chartHeading"><div class="section-heading"><div><h2 id="chartHeading">A closer look</h2><p id="chartDate" class="small muted"></p></div><div class="chart-tabs" role="group" aria-label="Chart metric"><button type="button" data-metric="temperature" aria-pressed="true">Temperature</button><button type="button" data-metric="rain" aria-pressed="false">Rain chance</button></div></div><div id="chart" class="chart"></div><label class="sr-only" for="chartHour">Explore forecast hours</label><input id="chartHour" class="chart-slider" type="range" min="0" max="23" value="0"><p id="chartReadout" class="chart-readout" aria-live="polite"></p><p id="chartLegend" class="small muted"></p></section>
+        <details class="card hourly-detail" open><summary>Hour by hour<span aria-hidden="true">+</span></summary><div class="table-scroll"><table><caption id="hourlyCaption" class="sr-only">Hourly forecast in the location’s time zone</caption><thead><tr><th scope="col">Time</th><th scope="col">Temp</th><th scope="col" id="hourChanceHeading">Rain signal</th><th scope="col" id="hourRainHeading">Rain</th></tr></thead><tbody id="hourlyRows"></tbody></table></div></details>
+        <div class="forecast-notes"><p id="sourceDetail"></p><p id="probabilityNote"></p><p>Partial days cover only returned hours. Missing values stay unknown; they are never counted as zero.</p><a id="dataCredit" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Weather data by Open-Meteo</a></div>
+      </div>
+    </section>
+  </main>
+  <footer class="wrap page-footer"><span>rainscope · Less guessing. More living.</span><details><summary>Privacy & data</summary><p>Saved places, preferences, and your last selected pin stay in this browser. Location is requested only when you press “Use my location”. Search text and coordinates are sent to the selected geocoding and weather services. Opening the map requests OpenStreetMap tiles. Sharing includes your selected coordinates in the link. No Google forecast responses or API keys are stored in your browser.</p><p><a href="https://open-meteo.com/en/terms" target="_blank" rel="noopener noreferrer">Open-Meteo terms</a> · <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google privacy</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a></p><button type="button" id="clearSaved" class="text-button">Clear saved places and preferences</button></details></footer>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <noscript><p class="wrap error-card">RainScope needs JavaScript to fetch and display forecasts. Enable it and reload this page.</p></noscript>
+</body>
+</html>
