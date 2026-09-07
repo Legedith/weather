@@ -4,7 +4,8 @@
 button:focus-visible,input:focus-visible,a:focus-visible,canvas:focus-visible,#map:focus-visible{outline:3px solid var(--pink,#ff4da6);outline-offset:4px}
 .field:focus-within{outline:2px solid #3155ff;outline-offset:2px}
 button:disabled{cursor:wait}
-#sourceNotice{margin:0 0 14px}
+/* The archived theme hides generic microcopy; operational warnings must show. */
+#sourceNotice{display:block;margin:0 0 14px;font-size:12px;line-height:1.5}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .skip-link{position:fixed;left:12px;top:-100px;z-index:200;padding:12px;background:#ffe34d;color:#15151b;border:3px solid #15151b;font-weight:bold}
 .skip-link:focus{top:12px}
