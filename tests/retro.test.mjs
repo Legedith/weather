@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile, readdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { compileRetro } from '../scripts/retro-build.mjs';
+const root = new URL('../',import.meta.url);
+const parts = (await readdir(new URL('site-parts/',root))).filter(n=>/^\d{2}\.part$/.test(n)).sort();
+const original = (await Promise.all(parts.map(n=>readFile(new URL(`site-parts/${n}`,root),'utf8')))).join('');
+const runtime = await readFile(new URL('assets/retro-runtime.js',root),'utf8');
+const {html,app}=compileRetro(original,runtime);
+test('all original theme CSS is retained byte-for-byte',()=>{assert.equal(html.match(/<style>([\s\S]*?)<\/style>/)[1],original.match(/<style>([\s\S]*?)<\/style>/)[1]);assert.equal(parts.length,12);});
+test('original retro structure, windows, marquee and weather effects are preserved',()=>{for(const marker of ['retro-marquee','weatherFx','FORECAST_VIEWER.HTML','hero-grid','daysGrid','timelineBody','Courier New','--pink:#ff4da6','--yellow:#ffe34d'])assert(html.includes(marker),marker);assert(!html.includes('assets/styles.css'));});
+test('runtime keeps existing tested provider adapters rather than restoring obsolete parser',()=>{assert(app.includes('loadForecast'));assert(!app.includes('function parseForecast('));assert(!app.includes('axios'));assert(!html.includes('axios'));assert(!app.includes('Number(a[i])'));});
+test('restored page has keyboard, loading and error affordances',()=>{for(const marker of ['Skip to forecast','role="combobox"','aria-describedby="chartA11y"','role="alert"','type="module"','retro-polish.css'])assert(html.includes(marker));});
+test('restoration fails loudly if original source boundaries change',()=>{assert.throws(()=>compileRetro('<html></html>',runtime),/script/);assert.throws(()=>compileRetro(original.replace('// ---------- Forecast ----------','changed'),runtime),/boundary/);});
+test('compiled application is valid native module JavaScript',async()=>{const dir=await mkdtemp(join(tmpdir(),'rainscope-retro-'));try{const file=join(dir,'app.mjs');await writeFile(file,app);execFileSync(process.execPath,['--check',file],{stdio:'pipe'});}finally{await rm(dir,{recursive:true,force:true});}});

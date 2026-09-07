@@ -1,0 +1,12 @@
+/* Small accessibility/usability additions only. Original palettes, type, layout,
+   window borders, shadows, marquee and weather effects live in site-parts/. */
+[hidden]{display:none!important}
+button:focus-visible,input:focus-visible,a:focus-visible,canvas:focus-visible,#map:focus-visible{outline:3px solid var(--pink,#ff4da6);outline-offset:4px}
+.field:focus-within{outline:2px solid #3155ff;outline-offset:2px}
+button:disabled{cursor:wait}
+#sourceNotice{margin:0 0 14px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.skip-link{position:fixed;left:12px;top:-100px;z-index:200;padding:12px;background:#ffe34d;color:#15151b;border:3px solid #15151b;font-weight:bold}
+.skip-link:focus{top:12px}
+.google-attribution{font-family:Arial,sans-serif;font-size:12px;font-weight:400;letter-spacing:normal;white-space:nowrap}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
