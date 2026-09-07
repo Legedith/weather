@@ -18,7 +18,15 @@ No account connector other than GitHub was used. No secrets, access tokens, acco
 
 [Open-Meteo's WeatherNext API](https://open-meteo.com/en/docs/google-weathernext-api) still documents **WeatherNext 2** and `google_weathernext2_ensemble`. No newly available, documented, unauthenticated WeatherNext 3 replacement was verified in this research. The live rejection above strengthens that finding for the specific candidate identifier, but is not proof that every possible third-party endpoint is unavailable.
 
-[Google Maps Platform Weather API](https://mapsplatform.google.com/maps-products/weather/) explicitly includes WeatherNext 3 among the models enhancing its blended forecasts. It is a usable alternative with a [recurring free allowance and billing requirements](https://developers.google.com/maps/documentation/weather/usage-and-billing), not a no-signup or pure WeatherNext 3 API. The app's server-side adapter remains ready for this route once a proxy/key is configured.
+[Google Maps Platform Weather API](https://mapsplatform.google.com/maps-products/weather/) explicitly includes WeatherNext 3 among the models enhancing its blended forecasts. For production, it has a [recurring free allowance and billing requirements](https://developers.google.com/maps/documentation/weather/usage-and-billing); it is not a no-signup or pure WeatherNext 3 API. The app's server-side adapter remains ready once a proxy/key is configured.
+
+### No-billing option for testing, not the public production site
+
+Google's [Maps Demo Key guide for the Weather API](https://developers.google.com/maps/documentation/weather/demo-key) documents a no-cost prototyping option without entering billing information. Sign in with a Google Account, choose **Get a Demo Key**, and accept the demo terms. Weather API is explicitly supported. Daily limits pause usage rather than charge for overages.
+
+This is a useful way to evaluate the existing Google Weather adapter before setting up billing, but the demo key is **for testing/prototyping only, not production**. The API remains Google's blended forecast service: the demo key does not grant raw WeatherNext 3 bucket access or let us select a pure model version. No demo account/key was created or accepted on the owner's behalf, and no authenticated demo request was run during this check. Keep any local test key in the proxy environment, never in the frontend or a public commit. Review the guide's production-upgrade requirements before exposing a public endpoint.
+
+### Raw WeatherNext 3 data
 
 [Google's raw-data access guide](https://developers.google.com/weathernext/guides/access-forecast) provides account-gated WeatherNext 3 through Earth Engine, BigQuery and Cloud Storage. The [statistics Zarr bucket](https://developers.google.com/weathernext/guides/gcs) has Requester Pays OFF:
 
