@@ -40,7 +40,7 @@ def google(hours):
 
 
 async def main():
-    checks, errors, requests = [], [], []
+    checks, failures, errors, requests = [], [], [], []
     mode = {}
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, executable_path=os.environ.get('CHROMIUM_PATH'), args=['--no-sandbox'])
@@ -70,6 +70,10 @@ async def main():
                 await r.abort()
         await context.route('**/*',route)
         page=await context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
+        async def text(selector):
+            # The original retro CSS uppercases some labels. Test their data text
+            # separately from that presentation, which has its own style check.
+            return (await page.locator(selector).text_content() or '').strip()
         async def boot():
             await page.goto('https://rainscope.example.test/')
             await page.wait_for_function("document.getElementById('forecastBtn').onclick !== null")
@@ -77,9 +81,9 @@ async def main():
             await page.locator('#forecastBtn').click()
             await page.locator('#forecastContent.visible').wait_for()
             await page.wait_for_function("document.getElementById('forecastPanel').getAttribute('aria-busy') === 'false'")
+            assert not await page.locator('#locationError').is_visible(), await text('#locationError')
         def check(name, condition):
-            assert condition, name
-            checks.append(name)
+            (checks if condition else failures).append(name)
         try:
             await boot()
             check('original manual forecast flow, not a redesigned auto dashboard', await page.locator('#emptyState').is_visible() and not requests)
@@ -87,18 +91,19 @@ async def main():
             check('original terminal window chrome and marquee', await page.locator('.retro-marquee').count()==1 and 'FORECAST_VIEWER.HTML' in await page.locator('#forecastPanel').evaluate("e=>getComputedStyle(e,'::before').content"))
             check('original heavy panel borders', await page.locator('.left-panel').evaluate("e=>parseFloat(getComputedStyle(e).borderTopWidth)>=3"))
             await forecast()
-            check('real returned member count and correct model label', '4 temperature members' in await page.locator('.model-pill').inner_text() and 'WeatherNext 2' in await page.locator('.forecast-top .eyebrow').inner_text())
+            check('real returned member count and correct model label', '4 temperature members' in await text('.model-pill') and 'WeatherNext 2' in await text('.forecast-top .eyebrow'))
+            check('original uppercase label presentation', await page.locator('.forecast-top .eyebrow').evaluate("e=>getComputedStyle(e).textTransform")=='uppercase')
             check('forecast request includes the closing precipitation timestamp', 'forecast_hours=25' in requests[-1])
             expected=dt.datetime.fromtimestamp(START,dt.timezone(dt.timedelta(hours=5,minutes=30))).strftime('%I').lstrip('0')
-            check('India timezone independent of browser timezone', await page.locator('#timezoneText').inner_text()=='Asia/Kolkata' and (await page.locator('.time-main').first.inner_text()).startswith(expected+':'))
+            check('India timezone independent of browser timezone', await text('#timezoneText')=='Asia/Kolkata' and (await page.locator('.time-main').first.text_content()).startswith(expected+':'))
             await page.locator('#forecastChart').focus();await page.keyboard.press('ArrowRight')
-            check('keyboard chart exposes exact hour values', bool(await page.locator('#chartA11y').inner_text()) and await page.locator('#chartTooltip').is_visible())
+            check('keyboard chart exposes exact hour values', bool(await text('#chartA11y')) and await page.locator('#chartTooltip').is_visible())
             await page.locator('#forecastBtn').focus()
             await page.screenshot(path=str(OUT/'retro-desktop.png'),full_page=True)
             check('desktop has no horizontal overflow', await page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
-            zoom=await page.locator('#mapZoomReadout').inner_text()
+            zoom=await text('#mapZoomReadout')
             await page.locator('#map').dispatch_event('wheel',{'deltaY':100,'ctrlKey':False})
-            check('ordinary scrolling does not unexpectedly zoom the map', zoom==await page.locator('#mapZoomReadout').inner_text())
+            check('ordinary scrolling does not unexpectedly zoom the map', zoom==await text('#mapZoomReadout'))
             await page.locator('#map').focus();await page.keyboard.press('ArrowRight');await page.keyboard.press('Enter')
             check('keyboard map selection invalidates old forecast', not await page.locator('#forecastContent').is_visible())
             lat=await page.locator('#latInput').input_value()
@@ -110,20 +115,20 @@ async def main():
             check('daily keyboard selection preserves focus', await second.get_attribute('aria-pressed')=='true' and await second.evaluate('(e)=>document.activeElement===e'))
             check('daily selection shows the chosen 24 hours', await page.locator('.timeline-row').count()==24)
             await page.locator('#placeSearch').fill('Pune');await page.locator('#searchResults [role=option]').first.wait_for()
-            check('untrusted search names are escaped', await page.locator('#searchResults img').count()==0 and '<img' in await page.locator('#searchResults').inner_text())
+            check('untrusted search names are escaped', await page.locator('#searchResults img').count()==0 and '<img' in await text('#searchResults'))
             await page.keyboard.press('ArrowUp')
             check('search ArrowUp initially selects last option', await page.locator('#placeSearch').get_attribute('aria-activedescendant')=='search-option-1')
             await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter')
             check('search selection retains manual forecast flow', '18.5204'==await page.locator('#latInput').input_value() and not await page.locator('#forecastContent').is_visible())
             await forecast()
-            check('forecast belongs to selected search result', 'Pune' in await page.locator('#forecastTitle').inner_text())
+            check('forecast belongs to selected search result', 'Pune' in await text('#forecastTitle'))
             await boot();await forecast()
-            check('selected place persists in native browser storage', 'Pune' in await page.locator('#forecastTitle').inner_text())
+            check('selected place persists in native browser storage', 'Pune' in await text('#forecastTitle'))
             await page.locator('#placeSearch').fill('Slow');await page.wait_for_timeout(330);await page.locator('#placeSearch').fill('');await page.wait_for_timeout(650)
             check('cleared search cannot be reopened by a stale response', not await page.locator('#searchResults').is_visible())
             await page.evaluate("navigator.geolocation.getCurrentPosition=(ok,fail)=>fail({code:1})")
             await page.locator('#locateMe').click()
-            check('GPS denial offers an actionable error', 'denied' in await page.locator('#locationError').inner_text())
+            check('GPS denial offers an actionable error', 'denied' in await text('#locationError'))
             await page.evaluate("navigator.geolocation.getCurrentPosition=(ok)=>{window.pendingGPS=ok}")
             await page.locator('#locateMe').click();await page.locator('#latInput').fill('17.5')
             await page.evaluate("window.pendingGPS({coords:{latitude:28.6,longitude:77.2,accuracy:10}})")
@@ -131,16 +136,16 @@ async def main():
             mode['slow']=True
             await page.locator('#daysBtn').click();await page.locator('#horizonN').fill('3');await page.locator('#forecastBtn').click()
             await page.locator('#hoursBtn').click();await page.locator('#horizonN').fill('1');await forecast();await page.wait_for_timeout(650)
-            check('a cancelled forecast cannot overwrite the new range', 'Next 1 hours' in await page.locator('#forecastSub').inner_text())
+            check('a cancelled forecast cannot overwrite the new range', 'Next 1 hour' in await text('#forecastSub'))
             mode['slow']=False
             await page.locator('#horizonN').fill('24')
             mode['all_null']=True;await page.locator('#forecastBtn').click();await page.locator('#locationError.visible').wait_for()
             check('all-null data fails visibly without false dry or zero forecast', not await page.locator('#forecastContent').is_visible())
             mode['all_null']=False;await forecast()
             mode['missing_rain']=True;await forecast()
-            check('missing rain suppresses the total and shows a notice', await page.locator('#totalRain').inner_text()=='—' and await page.locator('#sourceNotice').is_visible())
+            check('missing rain suppresses the total and shows a notice', await text('#totalRain')=='—' and await page.locator('#sourceNotice').is_visible())
             mode['missing_rain']=False;mode['missing_temp']=True;await forecast()
-            check('missing temperature is unknown rather than zero Celsius', await page.locator('#nextTemp').inner_text()=='—' and '0°C' not in await page.locator('.timeline-row').first.inner_text())
+            check('missing temperature is unknown rather than zero Celsius', await text('#nextTemp')=='—' and '0°C' not in await page.locator('.timeline-row').first.text_content())
             mode['missing_temp']=False
             for mood in ['sunny','rainy','cloudy','night','chilly']:
                 mode['mood']=mood;await forecast()
@@ -155,19 +160,20 @@ async def main():
             await page.set_viewport_size({'width':1440,'height':1080})
             await page.locator('#hoursBtn').click();await page.locator('#horizonN').fill('24')
             mode['google']=True;await boot();await page.locator('#hoursBtn').click();await page.locator('#horizonN').fill('24');await forecast()
-            check('Google is accurately labelled as a blended service', 'Google Weather API' in await page.locator('.forecast-top .eyebrow').inner_text() and 'blended' in await page.locator('.model-pill').inner_text())
+            check('Google is accurately labelled as a blended service', 'Google Weather API' in await text('.forecast-top .eyebrow') and 'blended' in await text('.model-pill'))
             check('Google Maps attribution is visible and no uncertainty is invented', await page.locator('.google-attribution').is_visible() and not await page.locator('.legend span:nth-child(2)').is_visible())
             mode['google_fail']=True;await forecast()
-            check('whole-source fallback is disclosed', 'WeatherNext 2' in await page.locator('.forecast-top .eyebrow').inner_text() and 'instead' in await page.locator('#sourceNotice').inner_text())
+            check('whole-source fallback is disclosed', 'WeatherNext 2' in await text('.forecast-top .eyebrow') and 'instead' in await text('#sourceNotice'))
             mode['google_fail']=False
             await page.locator('#daysBtn').click();await page.locator('#horizonN').fill('15');await forecast()
-            check('long range keeps the free ensemble rather than overstating Google coverage', 'ensemble-api.open-meteo.com' in requests[-1] and '10 days' in await page.locator('#sourceNotice').inner_text())
+            check('long range keeps the free ensemble rather than overstating Google coverage', 'ensemble-api.open-meteo.com' in requests[-1] and '10 days' in await text('#sourceNotice'))
             await page.emulate_media(reduced_motion='reduce')
             check('reduced-motion preference stops marquee animation', await page.locator('.retro-marquee-track').evaluate("e=>getComputedStyle(e).animationName")=='none')
             check('no browser JavaScript runtime errors', not errors)
+            assert not failures, failures
         finally:
             await page.screenshot(path=str(OUT/'last-state.png'),full_page=True)
-            report={'passed':len(checks),'checks':checks,'browser_errors':errors,'mode':'routed HTTP, native modules and storage, synthetic weather fixtures'}
+            report={'passed':len(checks),'failed':failures,'checks':checks,'browser_errors':errors,'mode':'routed HTTP, native modules and storage, synthetic weather fixtures', 'diagnostic_labels':{s:await text(s) for s in ['.model-pill','.forecast-top .eyebrow','#locationError','#forecastSub']}}
             (OUT/'browser-results.json').write_text(json.dumps(report,indent=2))
             print(json.dumps(report,indent=2))
             await browser.close()
